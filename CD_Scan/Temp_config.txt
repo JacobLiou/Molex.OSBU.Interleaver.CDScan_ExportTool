@@ -1,0 +1,4 @@
+1.归零扫描设置参数(起始_终止_步进_RF_IF_PDL_通道间隔),1528.0,1568.0,0.001,500,300,1,100,
+2.CD扫描的原始文件,C:\Users\dmin\My Data\F\Interleaver_Process_Testing_System\CD_Scan\B6508714-CD-13648-01-CFOI050200IFA06=终测CD测试=23,
+3.CD导表的模板和脚本,C:\Users\dmin\My Data\F\Interleaver_Process_Testing_System\CD_Scan\77601068G,C:\Users\dmin\My Data\Interleaver_Process_Testing_System\bin\config\ExcelTemplate,
+4.产品类型,2,

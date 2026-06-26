@@ -1,0 +1,21 @@
+10,1
+17,60,100,0
+CCF,,10,0.5,,,
+ITU Shift,,10,0.5,,,
+MAX IL,ITU,10,,,,
+MIN IL,ITU,10,,,,
+PDL,ITU,10,,,,
+Ripple,ITU,10,,,,
+Adj Iso,ITU,10,,,,
+Adj Iso,ITU,10,,,,
+Adj Iso,ITU,12.5,,,,
+GD Ripple,ITU,6,,,,1
+GD Ripple,ITU,8,,,,1
+GD Ripple,ITU,10,,,,1
+GD Slope,ITU,8,,,,
+Worst CD,ITU,8,,,,
+Worst CD,ITU,10,1,,,
+Passband,ITU,10,3,clean,,
+Passband,ITU,10,0.5,clean,,
+Stopband,ITU,10,0.5,,,
+PMD,ITU,10,,,,
