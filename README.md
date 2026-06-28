@@ -67,9 +67,23 @@ Interleaver（交织器）终测 CD（色散）工序的数据采集与导表工
 | `parameter.ini` | 预匹配合格阈值，节名 `8048M_1` / `8048M_2` |
 | `amalgamate.ini` | COER/DCM 文件路径与数量配置 |
 | `NO_pair.ini` | 预匹配失败时记录的 COER 序列号 |
-| `{产品号}.ini` | 产品 `CalGhz` 校准频率（节 `[CalGhz]`，键 `Vaue`） |
+| `{产品号}.ini` | 频段锚点配置（与 `Temp_config.txt` 第 3 行产品前缀同目录，独立导表时与脚本同目录） |
 
-> 注意：代码中 `m_nCalGhz` 目前在 `outputresult_Click` 里硬编码为 `184000`，会覆盖 ini 读取值。
+#### `{产品号}.ini` — `[CalGhz]` 节
+
+| 键 | 说明 | 默认值 |
+|----|------|--------|
+| `Vaue` | L 段 / 单 C 段 ITU 锚点（×100 内部单位，如 `190000` = 1900 THz 基准） | `190000` |
+| `CalGhzC` | C+L 产品时 C 段锚点 | `190000` |
+| `LastChC` | C+L 产品时 C 段末信道（脚本第 2 行末信道为 L 段） | `60.5` |
+| `BandMode` | `C` 纯 C band；`CL` 同一 CSV 导出 L+C 两段 | `C` |
+
+样例：
+
+- C band：[`CFOI050100OPL03.ini`](CFOI050100OPL03.ini)
+- C+L band：[`CFOI050CM0ADV01.ini`](CFOI050CM0ADV01.ini)
+
+C+L 导表时，ITU 网格先按 L 锚点生成 L 段信道，再按 C 锚点生成 C 段信道，依次写入同一 `*-导表.csv`。
 
 ## 数据文件格式
 
@@ -139,6 +153,7 @@ Freq,GD,IL/Gain,Phase,PDL,PMD,Freq,CD
 - 导表前须存在与产品对应的 `*_script_*.txt` 脚本
 - 若目标 `*-导表.csv` 已存在，程序会自动备份为 `*-导表.csv_N.csv`，不直接覆盖
 - 仓库根目录大量 `*.csv`、`*_script_*.txt` 为测试样例，非程序配置模板
+- C+L 产品原始 CSV 须覆盖 L band 频率（约 `185xxx–190xxx`）与 C band（约 `191xxx–196xxx`）；仅 C band 扫描波长时 L 段指标会异常
 - 仪器相关功能需在安装 Agilent SDK 且仪器联网的环境下验证
 
 ## 源码结构

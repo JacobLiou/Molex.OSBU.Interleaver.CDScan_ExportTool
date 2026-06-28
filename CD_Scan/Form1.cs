@@ -45,6 +45,9 @@ namespace CD_Scan
         int nIF, nchspace, nchstep;
         int m_nCDP;
         int m_nCalGhz;
+        int m_nCalGhzC;
+        double m_nLastChC;
+        bool m_bBandCL;
         bool breadpara;
         bool bconnect;
         ArrayList alFindByCDFreq = new ArrayList();
@@ -116,6 +119,96 @@ namespace CD_Scan
 
         }
 
+        private string ResolveProductPrefix()
+        {
+            if (!string.IsNullOrEmpty(m_stroutputfile))
+                return m_stroutputfile;
+
+            if (string.IsNullOrEmpty(m_strscriptfile))
+                return "";
+
+            string name = Path.GetFileNameWithoutExtension(m_strscriptfile);
+            int idx = name.IndexOf("_script_");
+            if (idx > 0)
+                name = name.Substring(0, idx);
+
+            string dir = Path.GetDirectoryName(m_strscriptfile);
+            if (string.IsNullOrEmpty(dir))
+                return name;
+
+            return Path.Combine(dir, name);
+        }
+
+        private void LoadCalGhz()
+        {
+            m_nCalGhz = 190000;
+            m_nCalGhzC = 190000;
+            m_nLastChC = 60.5;
+            m_bBandCL = false;
+
+            string prefix = ResolveProductPrefix();
+            if (string.IsNullOrEmpty(prefix))
+                return;
+
+            m_strPNini = prefix + ".ini";
+            if (!System.IO.File.Exists(m_strPNini))
+                return;
+
+            Ini inifile = new Ini();
+            string strtemp = inifile.ReadValue("CalGhz", "Vaue", m_strPNini);
+            if (int.TryParse(strtemp, out int calValue))
+                m_nCalGhz = calValue;
+
+            strtemp = inifile.ReadValue("CalGhz", "CalGhzC", m_strPNini);
+            if (int.TryParse(strtemp, out int calCValue))
+                m_nCalGhzC = calCValue;
+
+            strtemp = inifile.ReadValue("CalGhz", "LastChC", m_strPNini);
+            if (double.TryParse(strtemp, out double lastChC))
+                m_nLastChC = lastChC;
+
+            strtemp = inifile.ReadValue("CalGhz", "BandMode", m_strPNini);
+            m_bBandCL = string.Equals(strtemp, "CL", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private int CalcRealLineCount(double dblFirstCh, double dblLastCh)
+        {
+            int nRealLine = (int)(dblLastCh - dblFirstCh) + 1;
+            if (nchspace < 100)
+                nRealLine = nRealLine * 2;
+            if (nchspace > 100)
+                nRealLine = nRealLine * 2 / 3 + 1;
+            if (nchspace > 150)
+                nRealLine = nRealLine / 2 + 1;
+            return nRealLine;
+        }
+
+        private void BuildExportRowRange(double dblFirstCh, double dblLastCh, ArrayList alITUCF, out int nRealStartIndex, out int nRealLine)
+        {
+            if (m_bBandCL)
+            {
+                nRealStartIndex = 0;
+                nRealLine = CalcRealLineCount(dblFirstCh, dblLastCh) + CalcRealLineCount(dblFirstCh, m_nLastChC);
+                if (alITUCF != null && alITUCF.Count > 0 && nRealLine > alITUCF.Count)
+                    nRealLine = alITUCF.Count;
+                return;
+            }
+
+            nRealLine = CalcRealLineCount(dblFirstCh, dblLastCh);
+            double dblBaseFreqC = (m_nCalGhz / 100.0 + dblLastCh) * 100;
+            double dblBaseFreqH = dblBaseFreqC + nchstep;
+
+            nRealStartIndex = 0;
+            for (nRealStartIndex = 0; nRealStartIndex < alITUCF.Count; nRealStartIndex++)
+            {
+                double dblCurCF = (double)alITUCF[nRealStartIndex];
+                if ((Math.Abs(dblCurCF - dblBaseFreqC) > 20) && (Math.Abs(dblCurCF - dblBaseFreqH) > 20))
+                    continue;
+
+                break;
+            }
+        }
+
         private void button3_Click(object sender, EventArgs e)
         {
 
@@ -172,6 +265,7 @@ namespace CD_Scan
 
             ArrayList alTitleparameter = new ArrayList();
             ArrayList alITUCF = new ArrayList();
+            LoadCalGhz();
             calcResult(alTotalRes, alTitle, alTitleparameter, alITUCF, out nFirstLine, out nFirstCol, out dblFirstCh, out dblLastCh);
 
             //  Excel.Application excel = new Excel.ApplicationClass();
@@ -180,43 +274,10 @@ namespace CD_Scan
                 string strTemplateFile = strtemplet;
 
                 // initial data preparing
-                int nRealLine = (int)(dblLastCh - dblFirstCh) + 1;
-                if (nchspace < 100)
-                {
-                    nRealLine = nRealLine * 2;
-                }                
-                if (nchspace > 100)
-                {
-                    nRealLine = nRealLine*2/ 3+1;
-                }
-                if (nchspace > 150)
-                {
-                    nRealLine = nRealLine / 2 + 1;
-                }
-                double dblBaseFreqC = (m_nCalGhz / 100 + dblLastCh) * 100;
+                int nRealLine;
+                int nRealStartIndex;
+                BuildExportRowRange(dblFirstCh, dblLastCh, alITUCF, out nRealStartIndex, out nRealLine);
 
-                //modify by chaoli;
-                //double dblBaseFreqH = dblBaseFreqC + 50;
-                double dblBaseFreqH = dblBaseFreqC + nchstep;
-
-                // double dblBaseFreqH = dblBaseFreqC + double.Parse(textBox_chspace.Text);
-
-                //excel.Workbooks.Open(strtemplet,
-                //                                    Type.Missing, Type.Missing, Type.Missing, Type.Missing,
-                //                                    Type.Missing, Type.Missing, Type.Missing, Type.Missing,
-                //                                    Type.Missing, Type.Missing, Type.Missing, Type.Missing,
-                //                                    Type.Missing, Type.Missing);
-                //Excel.Worksheet curSheet = (Excel.Worksheet)excel.Worksheets[1];
-
-                int nRealStartIndex = 0;
-                for (nRealStartIndex = 0; nRealStartIndex < alITUCF.Count; nRealStartIndex++)
-                {
-                    double dblCurCF = (double)alITUCF[nRealStartIndex];
-                    if ((Math.Abs(dblCurCF - dblBaseFreqC) > 20) && (Math.Abs(dblCurCF - dblBaseFreqH) > 20))
-                        continue;
-
-                    break;
-                }
                 StreamWriter strresultfile = new StreamWriter(strResFile);
                 string strtempw = "", strtempwpara = "", strtempvalue = "";
                 for (int i = 0; i < alTitle.Count; i++)
@@ -871,32 +932,12 @@ namespace CD_Scan
 
             ArrayList alTitleparameter = new ArrayList();
             ArrayList alITUCF = new ArrayList();
+            LoadCalGhz();
             calcResult(alTotalRes, alTitle, alTitleparameter, alITUCF, out nFirstLine, out nFirstCol, out dblFirstCh, out dblLastCh);
             string strTemplateFile = strtemplet;
-            int nRealLine = (int)(dblLastCh - dblFirstCh) + 1;
-            if (nchspace < 100)
-            {
-                nRealLine = nRealLine * 2;
-            }
-            if (nchspace > 100)
-            {
-                nRealLine = nRealLine * 2 / 3 + 1;
-            }
-            if (nchspace > 150)
-            {
-                nRealLine = nRealLine / 2 + 1;
-            }
-            double dblBaseFreqC = (m_nCalGhz / 100 + dblLastCh) * 100;
-            double dblBaseFreqH = dblBaseFreqC + nchstep;
-            int nRealStartIndex = 0;
-            for (nRealStartIndex = 0; nRealStartIndex < alITUCF.Count; nRealStartIndex++)
-            {
-                double dblCurCF = (double)alITUCF[nRealStartIndex];
-                if ((Math.Abs(dblCurCF - dblBaseFreqC) > 20) && (Math.Abs(dblCurCF - dblBaseFreqH) > 20))
-                    continue;
-
-                break;
-            }
+            int nRealLine;
+            int nRealStartIndex;
+            BuildExportRowRange(dblFirstCh, dblLastCh, alITUCF, out nRealStartIndex, out nRealLine);
 
             string strtempw = "", strtempwpara = "", strtempvalue = "";
             bool bwritefile = true;
@@ -1450,30 +1491,7 @@ namespace CD_Scan
                 return;
             }
           
-            m_strPNini = m_stroutputfile + ".ini";
-          
-            if (System.IO.File.Exists(m_strPNini))
-            {
-                string strsection = "";
-                string strtemp = "";
-                Ini inifile = new Ini();
-                //读取ini文件获取参数
-                strsection = "CalGhz";
-              
-                strtemp = inifile.ReadValue(strsection, "Vaue", m_strPNini);
-               
-                if (int.TryParse(strtemp, out int calValue))
-                {
-                    m_nCalGhz = calValue;
-                }
-               
-            }
-            else
-            {
-                m_nCalGhz = 190000;
-
-            }
-            m_nCalGhz = 184000;
+            LoadCalGhz();
 
             if (System.IO.File.Exists(m_strtestfile))
             {
@@ -1519,38 +1537,9 @@ namespace CD_Scan
                 string strTemplateFile = strtemplet;
 
                 // initial data preparing
-                int nRealLine = (int)(dblLastCh - dblFirstCh) + 1;
-                if (nchspace < 100)
-                {
-                    nRealLine = nRealLine * 2;
-                }
-                if (nchspace > 100)
-                {
-                    nRealLine = nRealLine * 2 / 3 + 1;
-                }
-                if (nchspace > 150)
-                {
-                    nRealLine = nRealLine / 2 + 1;
-                }
-                //202606
-               // double dblBaseFreqC = (1900 + dblLastCh) * 100;
-                double dblBaseFreqC = (m_nCalGhz/100 + dblLastCh) * 100;
-                //modify by chaoli;
-                //double dblBaseFreqH = dblBaseFreqC + 50;
-                double dblBaseFreqH = dblBaseFreqC + nchstep;
-
-                // double dblBaseFreqH = dblBaseFreqC + double.Parse(textBox_chspace.Text);
-
-               
-                int nRealStartIndex = 0;
-                for (nRealStartIndex = 0; nRealStartIndex < alITUCF.Count; nRealStartIndex++)
-                {
-                    double dblCurCF = (double)alITUCF[nRealStartIndex];
-                    if ((Math.Abs(dblCurCF - dblBaseFreqC) > 20) && (Math.Abs(dblCurCF - dblBaseFreqH) > 20))
-                        continue;
-
-                    break;
-                }
+                int nRealLine;
+                int nRealStartIndex;
+                BuildExportRowRange(dblFirstCh, dblLastCh, alITUCF, out nRealStartIndex, out nRealLine);
                 StreamWriter strresultfile = new StreamWriter(strResFile);
                 string strtempw = "", strtempwpara = "", strtempvalue = "";
                 for (int i = 0; i < alTitle.Count; i++)
@@ -1737,7 +1726,9 @@ namespace CD_Scan
                             }
                             //202606
                             // ResbyIL.m_nChFirst = 190000 + nLast * 100;
-                            ResbyIL.m_nChFirst = m_nCalGhz + nLast * 100;                 
+                            ResbyIL.m_nChFirst = m_nCalGhz + nLast * 100;
+                            ResbyIL.m_nChFirstC = m_nCalGhzC + m_nLastChC * 100;
+                            ResbyIL.m_bDualBand = m_bBandCL;
                         }
                     }
                     else

@@ -38,24 +38,24 @@ namespace InterleaverDateKit
     };
     public class Ini
     {
-        // 声明INI文件的写操作函数 WritePrivateProfileString()
+        // ????INI?????д???????? WritePrivateProfileString()
         [System.Runtime.InteropServices.DllImport("kernel32")]
         private static extern long WritePrivateProfileString(string section, string key, string val, string filePath);
-        // 声明INI文件的读操作函数 GetPrivateProfileString()
+        // ????INI?????????????? GetPrivateProfileString()
         [System.Runtime.InteropServices.DllImport("kernel32")]
         private static extern int GetPrivateProfileString(string section, string key, string def, System.Text.StringBuilder retVal, int size, string filePath);
        
       
         public void Writue(string section, string key, string value, string path)
         {
-            // section=配置节，key=键名，value=键值，path=路径
+            // section=??????key=??????value=?????path=·??
             WritePrivateProfileString(section, key, value, path);
         }
         public string ReadValue(string section, string key, string path)
         {
-            // 每次从ini中读取多少字节
+            // ??δ?ini?ж?????????
             System.Text.StringBuilder temp = new System.Text.StringBuilder(255);
-            // section=配置节，key=键名，temp=上面，path=路径
+            // section=??????key=??????temp=???棬path=·??
             GetPrivateProfileString(section, key, "", temp, 255, path);
             return temp.ToString();
         }
@@ -928,7 +928,9 @@ namespace InterleaverDateKit
     {
         public int m_nChSpace;
         public double m_nChFirst;
-        
+        public double m_nChFirstC;
+        public bool m_bDualBand;
+
         public ILChannelType checkChannelType()
         {
             int nFirstChTotalCount = (int)(m_nChSpace / (Math.Abs((double)Data.m_aldblFreq1[1] - (double)Data.m_aldblFreq1[0])));
@@ -951,10 +953,36 @@ namespace InterleaverDateKit
                 return ILChannelType.ChannelTypeEven;
         }
 
+        private void AppendITUGridSegment(double chFirst, ArrayList alITUGrid, double[] dblFreq)
+        {
+            if (dblFreq.Length == 0)
+                return;
+
+            double dblTempVal = chFirst + m_nChSpace;
+            while (dblTempVal >= dblFreq[dblFreq.Length - 1])
+            {
+                alITUGrid.Add(dblTempVal);
+                dblTempVal -= m_nChSpace;
+            }
+        }
+
+        private void CreateITUGridDual(ILChannelType type, ArrayList alITUGrid)
+        {
+            double[] dblFreq = (double[])Data.m_aldblFreq1.ToArray(typeof(double));
+            AppendITUGridSegment(m_nChFirst, alITUGrid, dblFreq);
+            AppendITUGridSegment(m_nChFirstC, alITUGrid, dblFreq);
+        }
+
         private void CreateITUGrid(ILChannelType type, ArrayList alITUGrid)
         {
             ArrayList aldblITUChGrid = new ArrayList();
             double[] dblFreq = (double[])Data.m_aldblFreq1.ToArray(typeof(double));
+            if (m_bDualBand)
+            {
+                CreateITUGridDual(type, alITUGrid);
+                return;
+            }
+
             double dblTempVal = 0;
             dblTempVal = m_nChFirst + m_nChSpace;
         
@@ -994,7 +1022,7 @@ namespace InterleaverDateKit
                     {
                         dblTempVal = dblFreq[0] - dblFreq[0] % (m_nChSpace / 2);
                     }
-                    //上面的算法感觉有问题，直接用外部传入的起始频率计算
+                    //????????о????????????????????????????
                     dblTempVal = m_nChFirst + m_nChSpace;
                 }
                 else
@@ -1007,7 +1035,7 @@ namespace InterleaverDateKit
                     {
                         dblTempVal = dblFreq[0] - dblFreq[0] % m_nChSpace - (m_nChSpace / 2);
                     }
-                    //上面的算法感觉有问题，直接用外部传入的起始频率计算
+                    //????????о????????????????????????????
                     dblTempVal = m_nChFirst + m_nChSpace;
                 }
                 while (dblTempVal >= dblFreq[dblFreq.Length - 1])
@@ -1210,7 +1238,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblMinIL = dblIL[nMinIndex];
                 double dblMaxIL = dblIL[nMaxIndex];
@@ -1240,14 +1268,14 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount + 3],
                     nIndexListArray[i * nMultiCount + 5], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblLeftIso = dblMinIL - dblIL[nMaxIndex];
 
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount + 6],
                     nIndexListArray[i * nMultiCount + 8], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblRightIso = dblMinIL - dblIL[nMaxIndex];
 
@@ -1261,7 +1289,7 @@ namespace InterleaverDateKit
                 Data.GetRangeIndexFromArray(dblStartFreq, dblEndFreq, dblFreq2, alIndexArray);
                 if (alIndexArray.Count == 0)
                 {
-                    throw new Exception("定义通带过小，无法查找相应CD数值点!");
+                    throw new Exception("?????????С????????????CD?????!");
                 }
                 else
                 {
@@ -1307,7 +1335,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblMinIL = dblIL[nMinIndex];
                 double dblMaxIL = dblIL[nMaxIndex];
@@ -1387,7 +1415,7 @@ namespace InterleaverDateKit
                     if (Data.FindMinMaxIndex(dblIL, nIndexListArray[j * nMultiCount],
                         nIndexListArray[j * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                     {
-                        throw new Exception("数据异常!");
+                        throw new Exception("??????!");
                     }
                     double dblMinIL = dblIL[nMinIndex];
                     double dblMaxIL = dblIL[nMaxIndex];
@@ -1395,14 +1423,14 @@ namespace InterleaverDateKit
                     if (Data.FindMinMaxIndex(dblIL, nIndexListArray[j * nMultiCount + 3],
                         nIndexListArray[j * nMultiCount + 5], ref nMinIndex, ref nMaxIndex) == false)
                     {
-                        throw new Exception("数据异常!");
+                        throw new Exception("??????!");
                     }
                     double dblLeftIso = dblMinIL - dblIL[nMaxIndex];
 
                     if (Data.FindMinMaxIndex(dblIL, nIndexListArray[j * nMultiCount + 6],
                         nIndexListArray[j * nMultiCount + 8], ref nMinIndex, ref nMaxIndex) == false)
                     {
-                        throw new Exception("数据异常!");
+                        throw new Exception("??????!");
                     }
                     double dblRightIso = dblMinIL - dblIL[nMaxIndex];
 
@@ -1416,7 +1444,7 @@ namespace InterleaverDateKit
                     Data.GetRangeIndexFromArray(dblStartFreq, dblEndFreq, dblFreq2, alIndexArray);
                     if (alIndexArray.Count == 0)
                     {
-                        throw new Exception("定义通带过小，无法查找相应CD数值点!");
+                        throw new Exception("?????????С????????????CD?????!");
                     }
                     else
                     {
@@ -1478,7 +1506,7 @@ namespace InterleaverDateKit
                     if (Data.FindMinMaxIndex(dblIL, nIndexListArray[j * nMultiCount],
                         nIndexListArray[j * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                     {
-                        throw new Exception("数据异常!");
+                        throw new Exception("??????!");
                     }
                     double dblMinIL = dblIL[nMinIndex];
                     double dblMaxIL = dblIL[nMaxIndex];
@@ -1553,7 +1581,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount],
                         nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblMinIL = dblIL[nMinIndex];
                 double dblMaxIL = dblIL[nMaxIndex];
@@ -1672,7 +1700,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[j * nMultiCount],
                     nIndexListArray[j * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblMaxIL = dblIL[nMaxIndex];
 
@@ -1811,7 +1839,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 dblMaxIL[i] = dblIL[nMaxIndex];
             }
@@ -1857,7 +1885,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblPMD, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 dblMaxPMD[i] = dblPMD[nMaxIndex];
             }
@@ -1907,7 +1935,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 dblMinIL[i] = dblIL[nMinIndex];
             }
@@ -1953,7 +1981,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblPDL, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 dblMaxPDL[i] = dblPDL[nMaxIndex];
             }
@@ -1998,7 +2026,7 @@ namespace InterleaverDateKit
         //        if (Data.FindMinMaxIndex(dblDGD, nIndexListArray[i * nMultiCount],
         //            nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
         //        {
-        //            throw new Exception("数据异常!");
+        //            throw new Exception("??????!");
         //        }
         //        dblMaxDGD[i] = dblDGD[nMaxIndex];
         //    }
@@ -2048,21 +2076,21 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount],
                     nIndexListArray[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblMaxIL = dblIL[nMaxIndex];
 
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount + 3],
                                         nIndexListArray[i * nMultiCount + 5], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblLeftIso = dblIL[nMinIndex] - dblMaxIL;
 
                 if (Data.FindMinMaxIndex(dblIL, nIndexListArray[i * nMultiCount + 6],
                     nIndexListArray[i * nMultiCount + 8], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblRightIso = dblIL[nMinIndex] - dblMaxIL;
 
@@ -2115,7 +2143,7 @@ namespace InterleaverDateKit
                 Data.GetRangeIndexFromArray(dblStartFreq, dblEndFreq, dblFreq2, alIndexArray);
                 if (alIndexArray.Count == 0)
                 {
-                    //throw new Exception("定义通带过小，无法查找相应CD数值点!");
+                    //throw new Exception("?????????С????????????CD?????!");
                     dblWstCD[i] = double.NaN;
                 }
                 else
@@ -2393,7 +2421,7 @@ namespace InterleaverDateKit
                 if (Data.FindMinMaxIndex(dblIL, (int)alIndexGrid[i * nMultiCount],
                         (int)alIndexGrid[i * nMultiCount + 2], ref nMinIndex, ref nMaxIndex) == false)
                 {
-                    throw new Exception("数据异常!");
+                    throw new Exception("??????!");
                 }
                 double dblMaxIL = dblIL[nMaxIndex];
 

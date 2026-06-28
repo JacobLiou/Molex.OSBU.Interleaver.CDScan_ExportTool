@@ -87,8 +87,8 @@ button6_Click
    - 原始：`{前缀}-ODD.csv` / `{前缀}-EVEN.csv`
    - 导表：`{前缀}-ODD-导表.csv`
    - 脚本：`{outputfile}_script_{ODD|EVEN}_{PDL|NOPDL}.txt`
-4. **硬编码**：`outputresult_Click` 中 `m_nCalGhz = 184000` 会覆盖 `{PN}.ini` 的 `CalGhz` 读取；改频率逻辑时需同步 `calcResult`、`ResbyIL.m_nChFirst` 及脚本第 2 行
-5. **信道行数**：`nRealLine` 受 `nchspace` 影响（`<100`、 `>100`、 `>150` 三分支），改输出范围时三处导表写文件逻辑需一并检查（`outputresult_Click`、`button5_Click`、`anaylsedata` 有重复代码）
+- **频段配置**：`LoadCalGhz()` 从 `{PN}.ini` 读取；`BandMode=CL` 时 `ILCalc.CreateITUGridDual` 合并 L/C 网格；导表行范围由 `BuildExportRowRange()` 统一计算（`outputresult_Click`、`button5_Click`、`anaylsedata`）
+5. **信道行数**：`CalcRealLineCount` / `BuildExportRowRange` 处理 `nchspace` 三分支；CL 模式 `nRealStartIndex=0`，`nRealLine` 为 L+C 行数之和
 6. **备份策略**：目标 CSV 已存在时备份为 `*_N.csv`，不弹窗覆盖（相关 MessageBox 已注释）
 
 ### 仪器与外部 DLL
@@ -108,7 +108,8 @@ button6_Click
 | 用户意图 | 优先查看 | 注意点 |
 |----------|----------|--------|
 | 新增导表指标 | `Form1.calcResult` 的 `switch` + `ILCalc` 新方法 | 更新 README 脚本格式；样例 CSV 回归 |
-| 调整信道范围/输出行数 | 脚本第 2 行 + `nRealLine` / `nRealStartIndex` | `nchspace` 三分支；三处写 CSV 逻辑可能重复 |
+| 调整信道范围/输出行数 | 脚本第 2 行 + `BuildExportRowRange` / `CalcRealLineCount` | CL 模式同步 `{PN}.ini` 的 `LastChC` |
+| C+L / 频段锚点 | `LoadCalGhz`、`ILCalc.m_nChFirst` / `m_nChFirstC` | `Vaue`/`CalGhzC` 与 `ResbyIL.m_nChFirst` 公式一致 |
 | 修改合格判定 | `anaylsedata` + `parameter.ini` | `paravalue_{N}` 最后一项为 IL Ripple；`position_*` 对应导表列索引 |
 | 换仪器 / 连接问题 | `pdlaClient`、`initpara`、`getResultValue` | 外部 DLL API，需实机 |
 | 修复导表数值 | `ILCalc.Calc*` + `LineFit` | 用仓库样例 `*.csv` + `*_script_*.txt` 对比 `*-导表.csv` |
@@ -116,6 +117,14 @@ button6_Click
 | UI 文案 / 按钮 | `Form1.Designer.cs` + 对应 `*_Click` | Designer 与事件处理分离 |
 
 ## 配置与脚本契约（速查）
+
+### `{PN}.ini`（节 `[CalGhz]`）
+
+- `Vaue`：锚点，默认 `190000`（C band）
+- `CalGhzC`：C+L 时 C 段锚点，默认 `190000`
+- `LastChC`：C+L 时 C 段末信道，默认 `60.5`
+- `BandMode`：`C` 或 `CL`
+- 样例：`CFOI050100OPL03.ini`（C）、`CFOI050CM0ADV01.ini`（CL）
 
 ### parameter.ini（节 `8048M_1` / `8048M_2`）
 
