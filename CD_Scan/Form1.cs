@@ -40,7 +40,10 @@ namespace CD_Scan
         bool m_bPDL, breadfile;
         string m_strdata, m_strini;
         string m_strCDDriverIP, m_strscriptfile, m_strtestfile, m_strresultfile, m_strtempletfile, m_strinputfile, m_stroutputfile, m_strconfigpath;
-        string m_strPN,m_strPNini;
+        string m_strPN, m_strPNini, m_strActivePn, m_strconfigpathFallback;
+        const string DefaultCBandScriptPrefix = "1834650041";
+        const string DefaultLBandScriptPrefix = "1831532952";
+        const string DefaultExcelTemplateRelativePath = @"..\config\ExcelTemplate";
         double dblstartw, dblstopw, dblstep, dblrf;
         int nIF, nchspace, nchstep;
         int m_nCDP;
@@ -48,6 +51,7 @@ namespace CD_Scan
         int m_nCalGhzC;
         double m_nLastChC;
         bool m_bBandCL;
+        bool m_bSilentExport;
         bool breadpara;
         bool bconnect;
         ArrayList alFindByCDFreq = new ArrayList();
@@ -119,24 +123,281 @@ namespace CD_Scan
 
         }
 
+        /// <summary>
+        /// Temp_config 中的路径相对 CD_Scan.exe 所在目录解析（MIMS 启动时 CWD 可能不是 exe 目录）。
+        /// </summary>
+        private static string ResolveConfigPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return path ?? "";
+
+            path = path.Trim();
+            if (Path.IsPathRooted(path))
+                return Path.GetFullPath(path);
+
+            return Path.GetFullPath(Path.Combine(Application.StartupPath, path));
+        }
+
+        private static bool IsValidExcelTemplateDir(string dir)
+        {
+            return !string.IsNullOrEmpty(dir)
+                && Directory.Exists(dir)
+                && System.IO.File.Exists(Path.Combine(dir, "CD_templet.csv"));
+        }
+
+        private string ResolveExcelTemplateDir(string fallback, bool warnIfMissing)
+        {
+            string primary = ResolveConfigPath(DefaultExcelTemplateRelativePath);
+            if (IsValidExcelTemplateDir(primary))
+                return primary;
+
+            if (!string.IsNullOrWhiteSpace(fallback))
+            {
+                string fb = ResolveConfigPath(fallback);
+                if (IsValidExcelTemplateDir(fb))
+                    return fb;
+                if (Directory.Exists(fb))
+                    return fb;
+            }
+
+            if (warnIfMissing && !m_bSilentExport)
+                MessageBox.Show("找不到ExcelTemplate目录，请确认 ..\\config\\ExcelTemplate 或 Temp_config 第3行第2字段。");
+
+            if (Directory.Exists(primary))
+                return primary;
+            if (!string.IsNullOrWhiteSpace(fallback) && Directory.Exists(ResolveConfigPath(fallback)))
+                return ResolveConfigPath(fallback);
+
+            return primary;
+        }
+
+        private static bool IsLBandPn(string pn)
+        {
+            return string.Equals(pn, DefaultLBandScriptPrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void RefreshConfigPaths()
+        {
+            string strfilename = Application.StartupPath + "\\Temp_config.txt";
+            StreamReader strcfg = new StreamReader(strfilename, Encoding.GetEncoding("GBK"));
+            try
+            {
+                strcfg.ReadLine();
+                string strcfgvalue = strcfg.ReadLine();
+                if (strcfgvalue != null)
+                {
+                    string[] strtempcfg = strcfgvalue.Split(',');
+                    if (strtempcfg.Length > 1)
+                        m_strinputfile = strtempcfg[1];
+                }
+                strcfgvalue = strcfg.ReadLine();
+                if (strcfgvalue != null)
+                {
+                    string[] strtempcfg = strcfgvalue.Split(',');
+                    if (strtempcfg.Length > 2)
+                        m_strconfigpathFallback = strtempcfg[2].Trim();
+                }
+                strcfg.ReadLine();
+                if (!strcfg.EndOfStream)
+                {
+                    strcfgvalue = strcfg.ReadLine();
+                    if (strcfgvalue != null)
+                    {
+                        string[] strtempcfg = strcfgvalue.Split(',');
+                        if (strtempcfg.Length > 1 && !string.IsNullOrWhiteSpace(strtempcfg[1]))
+                            m_strPN = strtempcfg[1].Trim();
+                    }
+                }
+            }
+            finally
+            {
+                strcfg.Close();
+            }
+        }
+
+        private bool TryExtractPn(string path, out string pn)
+        {
+            pn = "";
+            if (string.IsNullOrEmpty(path))
+                return false;
+
+            int eqIdx = path.IndexOf('=');
+            if (eqIdx > 0)
+            {
+                string beforeEq = path.Substring(0, eqIdx);
+                int dashIdx = beforeEq.LastIndexOf('-');
+                if (dashIdx >= 0 && dashIdx < beforeEq.Length - 1)
+                {
+                    string candidate = beforeEq.Substring(dashIdx + 1);
+                    if (candidate.Length == 10 && candidate.All(char.IsDigit))
+                    {
+                        pn = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            string[] parts = path.Split('\\', '/');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i].Length == 10 && parts[i].All(char.IsDigit))
+                {
+                    pn = parts[i];
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private string GetActivePn()
+        {
+            if (TryExtractPn(m_strinputfile, out string pn))
+                return pn;
+            if (!string.IsNullOrWhiteSpace(m_strPN))
+                return m_strPN.Trim();
+            if (TryExtractPn(m_strtestfile, out pn))
+                return pn;
+            return "";
+        }
+
+        private string ResolveScriptPrefixPath(string pn, string configDir)
+        {
+            if (IsLBandPn(pn))
+                return Path.Combine(configDir, DefaultLBandScriptPrefix);
+            return Path.Combine(configDir, DefaultCBandScriptPrefix);
+        }
+
+        private string ResolveScriptFile(bool odd, bool pdl)
+        {
+            if (odd)
+                return m_stroutputfile + (pdl ? "_script_ODD_PDL.txt" : "_script_ODD_NOPDL.txt");
+            return m_stroutputfile + (pdl ? "_script_EVEN_PDL.txt" : "_script_EVEN_NOPDL.txt");
+        }
+
+        private void RefreshProductContext()
+        {
+            RefreshConfigPaths();
+            m_strconfigpath = ResolveExcelTemplateDir(m_strconfigpathFallback, warnIfMissing: true);
+
+            m_strActivePn = GetActivePn();
+            if (string.IsNullOrEmpty(m_strActivePn))
+            {
+                if (!m_bSilentExport)
+                    MessageBox.Show("无法从Temp_config解析产品PN，请检查第2行路径。");
+                return;
+            }
+
+            m_stroutputfile = ResolveScriptPrefixPath(m_strActivePn, m_strconfigpath);
+        }
+
+        private void WarnIfBandScriptMismatch()
+        {
+            if (m_bSilentExport || string.IsNullOrEmpty(m_strtestfile) || !System.IO.File.Exists(m_strtestfile))
+                return;
+
+            double freqMax = 0;
+            double freqMin = double.MaxValue;
+            StreamReader sr = new StreamReader(m_strtestfile);
+            try
+            {
+                sr.ReadLine();
+                string line;
+                while ((line = sr.ReadLine()) != null)
+                {
+                    string[] cols = line.Split(',');
+                    if (cols.Length > 0 && double.TryParse(cols[0], out double f))
+                    {
+                        if (f > freqMax)
+                            freqMax = f;
+                        if (f < freqMin)
+                            freqMin = f;
+                    }
+                }
+            }
+            finally
+            {
+                sr.Close();
+            }
+
+            if (freqMin > freqMax)
+                return;
+
+            string scriptName = Path.GetFileName(m_stroutputfile ?? "");
+            bool cBandScript = string.Equals(scriptName, DefaultCBandScriptPrefix, StringComparison.OrdinalIgnoreCase);
+            bool lBandScript = string.Equals(scriptName, DefaultLBandScriptPrefix, StringComparison.OrdinalIgnoreCase);
+            bool lBandScan = freqMax < 188500;
+            bool cBandScan = freqMin > 189500;
+
+            if (cBandScript && lBandScan)
+                MessageBox.Show("警告：当前使用C band脚本(" + DefaultCBandScriptPrefix + ")，但扫描数据频率在L band范围，导表可能为空或错误。");
+            else if (lBandScript && cBandScan && !lBandScan)
+                MessageBox.Show("警告：当前使用L band脚本(" + DefaultLBandScriptPrefix + ")，但扫描数据频率在C band范围，导表可能为空或错误。");
+        }
+
         private string ResolveProductPrefix()
         {
+            if (!string.IsNullOrEmpty(m_strscriptfile))
+            {
+                string name = Path.GetFileNameWithoutExtension(m_strscriptfile);
+                int idx = name.IndexOf("_script_");
+                if (idx > 0)
+                    name = name.Substring(0, idx);
+
+                string dir = Path.GetDirectoryName(m_strscriptfile);
+                if (string.IsNullOrEmpty(dir))
+                    return name;
+
+                return Path.Combine(dir, name);
+            }
+
             if (!string.IsNullOrEmpty(m_stroutputfile))
                 return m_stroutputfile;
 
-            if (string.IsNullOrEmpty(m_strscriptfile))
+            return "";
+        }
+
+        private string GetScriptPrefixName()
+        {
+            if (!string.IsNullOrEmpty(m_strscriptfile))
+            {
+                string name = Path.GetFileNameWithoutExtension(m_strscriptfile);
+                int idx = name.IndexOf("_script_");
+                if (idx > 0)
+                    return name.Substring(0, idx);
+            }
+
+            if (!string.IsNullOrEmpty(m_stroutputfile))
+                return Path.GetFileName(m_stroutputfile);
+
+            return "";
+        }
+
+        private string ResolveIniPath()
+        {
+            string prefix = GetScriptPrefixName();
+            if (string.IsNullOrEmpty(prefix))
                 return "";
 
-            string name = Path.GetFileNameWithoutExtension(m_strscriptfile);
-            int idx = name.IndexOf("_script_");
-            if (idx > 0)
-                name = name.Substring(0, idx);
+            if (!string.IsNullOrEmpty(m_strconfigpath))
+            {
+                string ini = Path.Combine(m_strconfigpath, prefix + ".ini");
+                if (System.IO.File.Exists(ini))
+                    return ini;
+            }
 
-            string dir = Path.GetDirectoryName(m_strscriptfile);
-            if (string.IsNullOrEmpty(dir))
-                return name;
+            if (!string.IsNullOrEmpty(m_strscriptfile))
+            {
+                string dir = Path.GetDirectoryName(m_strscriptfile);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    string ini = Path.Combine(dir, prefix + ".ini");
+                    if (System.IO.File.Exists(ini))
+                        return ini;
+                }
+            }
 
-            return Path.Combine(dir, name);
+            return "";
         }
 
         private void LoadCalGhz()
@@ -146,12 +407,11 @@ namespace CD_Scan
             m_nLastChC = 60.5;
             m_bBandCL = false;
 
-            string prefix = ResolveProductPrefix();
-            if (string.IsNullOrEmpty(prefix))
-                return;
+            if (string.IsNullOrEmpty(m_strActivePn))
+                m_strActivePn = GetActivePn();
 
-            m_strPNini = prefix + ".ini";
-            if (!System.IO.File.Exists(m_strPNini))
+            m_strPNini = ResolveIniPath();
+            if (string.IsNullOrEmpty(m_strPNini))
                 return;
 
             Ini inifile = new Ini();
@@ -173,6 +433,9 @@ namespace CD_Scan
 
         private int CalcRealLineCount(double dblFirstCh, double dblLastCh)
         {
+            if (m_nCalGhz == 0 && !m_bBandCL)
+                return (int)((dblLastCh - dblFirstCh) / (nchspace / 100.0)) + 1;
+
             int nRealLine = (int)(dblLastCh - dblFirstCh) + 1;
             if (nchspace < 100)
                 nRealLine = nRealLine * 2;
@@ -191,6 +454,21 @@ namespace CD_Scan
                 nRealLine = CalcRealLineCount(dblFirstCh, dblLastCh) + CalcRealLineCount(dblFirstCh, m_nLastChC);
                 if (alITUCF != null && alITUCF.Count > 0 && nRealLine > alITUCF.Count)
                     nRealLine = alITUCF.Count;
+                return;
+            }
+
+            if (m_nCalGhz == 0)
+            {
+                nRealLine = CalcRealLineCount(dblFirstCh, dblLastCh);
+                if (alITUCF != null && alITUCF.Count > 0)
+                {
+                    if (nRealLine > alITUCF.Count)
+                        nRealLine = alITUCF.Count;
+                    // ITU 网格从 m_nChFirst+nChSpace 起算，比脚本末信道多 1 个高端点；取末尾 nRealLine 行与 firstCh..lastCh 对齐
+                    nRealStartIndex = Math.Max(0, alITUCF.Count - nRealLine);
+                }
+                else
+                    nRealStartIndex = 0;
                 return;
             }
 
@@ -391,16 +669,40 @@ namespace CD_Scan
                 }
                 strresultfile.Close();
 
-                MessageBox.Show("导表完成！");
+                if (!m_bSilentExport)
+                    MessageBox.Show("导表完成！");
 
             }
 
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message);
+                if (!m_bSilentExport)
+                    MessageBox.Show(ex.Message);
+                else
+                    throw;
             }
 
 
+        }
+
+        public static int RunCliExport(string csvPath, string scriptPath)
+        {
+            var form = new Form1();
+            form.m_bSilentExport = true;
+            form.m_strtestfile = csvPath;
+            form.m_strscriptfile = scriptPath;
+            form.m_strconfigpath = Path.GetDirectoryName(scriptPath) ?? ".";
+            if (form.TryExtractPn(csvPath, out string pn))
+                form.m_strActivePn = pn;
+            string scriptDir = Path.GetDirectoryName(scriptPath) ?? ".";
+            string scriptName = Path.GetFileNameWithoutExtension(scriptPath);
+            int scriptIdx = scriptName.IndexOf("_script_");
+            if (scriptIdx > 0)
+                form.m_stroutputfile = Path.Combine(scriptDir, scriptName.Substring(0, scriptIdx));
+            form.breadfile = true;
+            form.LoadCalGhz();
+            form.button5_Click(null, EventArgs.Empty);
+            return 0;
         }
 
         private void button6_Click(object sender, EventArgs e)
@@ -1108,8 +1410,14 @@ namespace CD_Scan
 
             strcfgvalue = strcfg.ReadLine();
             strtempcfg = strcfgvalue.Split(',');
-            m_stroutputfile = strtempcfg[1];
-            m_strconfigpath = strtempcfg[2];
+            if (strtempcfg.Length > 2)
+                m_strconfigpathFallback = strtempcfg[2].Trim();
+            m_strconfigpath = ResolveExcelTemplateDir(m_strconfigpathFallback, warnIfMissing: false);
+            m_strActivePn = GetActivePn();
+            if (!string.IsNullOrEmpty(m_strActivePn))
+                m_stroutputfile = ResolveScriptPrefixPath(m_strActivePn, m_strconfigpath);
+            else
+                m_stroutputfile = Path.Combine(m_strconfigpath, DefaultCBandScriptPrefix);
             int ntype = 0;
             strcfgvalue = strcfg.ReadLine();
             strtempcfg = strcfgvalue.Split(',');
@@ -1126,9 +1434,16 @@ namespace CD_Scan
                 radioDemux.Enabled = false;
             }
 
-            //strcfgvalue = strcfg.ReadLine();
-            //strtempcfg = strcfgvalue.Split(',');
-            //m_strPN = strtempcfg[1];
+            if (!strcfg.EndOfStream)
+            {
+                strcfgvalue = strcfg.ReadLine();
+                if (strcfgvalue != null)
+                {
+                    strtempcfg = strcfgvalue.Split(',');
+                    if (strtempcfg.Length > 1 && !string.IsNullOrWhiteSpace(strtempcfg[1]))
+                        m_strPN = strtempcfg[1].Trim();
+                }
+            }
             strcfg.Close();
         }
         private void initpara()
@@ -1318,6 +1633,7 @@ namespace CD_Scan
                     MessageBox.Show("未连接测试设备，请连接！");
                     return;
                 }
+                RefreshProductContext();
                 initpara();
                 if (radioODD.Checked == true)
                 {
@@ -1342,12 +1658,12 @@ namespace CD_Scan
                     if (m_bPDL)
                     {
                         // m_strtempletfile = m_stroutputfile + "_templet_ODD_PDL.xls";
-                        m_strscriptfile = m_stroutputfile + "_script_ODD_PDL.txt";
+                        m_strscriptfile = ResolveScriptFile(true, true);
                     }
                     else
                     {
                         // m_strtempletfile = m_stroutputfile + "_templet_ODD_NOPDL.xls";
-                        m_strscriptfile = m_stroutputfile + "_script_ODD_NOPDL.txt";
+                        m_strscriptfile = ResolveScriptFile(true, false);
                     }
                 }
                 else
@@ -1373,12 +1689,12 @@ namespace CD_Scan
                     if (m_bPDL)
                     {
                         // m_strtempletfile = m_stroutputfile + "_templet_EVEN_PDL.xls";
-                        m_strscriptfile = m_stroutputfile + "_script_EVEN_PDL.txt";
+                        m_strscriptfile = ResolveScriptFile(false, true);
                     }
                     else
                     {
                         // m_strtempletfile = m_stroutputfile + "_templet_EVEN_NOPDL.xls";
-                        m_strscriptfile = m_stroutputfile + "_script_EVEN_NOPDL.txt";
+                        m_strscriptfile = ResolveScriptFile(false, false);
                     }
                 }
                 string strpath = Application.StartupPath + "\\Temp_testfile.txt";
@@ -1411,6 +1727,8 @@ namespace CD_Scan
             {
                 dblprarmax[m] = 0;
             }
+
+            RefreshProductContext();
            
             if (radioODD.Checked == true)
             {
@@ -1435,12 +1753,12 @@ namespace CD_Scan
                 if (m_bPDL)
                 {
 
-                    m_strscriptfile = m_stroutputfile + "_script_ODD_PDL.txt";
+                    m_strscriptfile = ResolveScriptFile(true, true);
                 }
                 else
                 {
 
-                    m_strscriptfile = m_stroutputfile + "_script_ODD_NOPDL.txt";
+                    m_strscriptfile = ResolveScriptFile(true, false);
                 }
             }
             else
@@ -1466,12 +1784,12 @@ namespace CD_Scan
                 if (m_bPDL)
                 {
 
-                    m_strscriptfile = m_stroutputfile + "_script_EVEN_PDL.txt";
+                    m_strscriptfile = ResolveScriptFile(false, true);
                 }
                 else
                 {
 
-                    m_strscriptfile = m_stroutputfile + "_script_EVEN_NOPDL.txt";
+                    m_strscriptfile = ResolveScriptFile(false, false);
                 }
             }
             
@@ -1502,6 +1820,8 @@ namespace CD_Scan
                 MessageBox.Show("没有找到测试的文件，请确定测试完成或找工程师处理！");
                 return;
             }
+
+            WarnIfBandScriptMismatch();
 
             //if (System.IO.File.Exists(m_strresultfile))
             //{
@@ -1726,6 +2046,11 @@ namespace CD_Scan
                             }
                             //202606
                             // ResbyIL.m_nChFirst = 190000 + nLast * 100;
+                            ResbyIL.m_nCalGhzL = m_nCalGhz;
+                            ResbyIL.m_nCalGhzC = m_nCalGhzC;
+                            ResbyIL.m_dblScriptFirstCh = nFirst;
+                            ResbyIL.m_dblScriptLastCh = nLast;
+                            ResbyIL.m_dblScriptLastChC = m_nLastChC;
                             ResbyIL.m_nChFirst = m_nCalGhz + nLast * 100;
                             ResbyIL.m_nChFirstC = m_nCalGhzC + m_nLastChC * 100;
                             ResbyIL.m_bDualBand = m_bBandCL;
@@ -2234,6 +2559,8 @@ namespace CD_Scan
 
             catch (Exception ex)
             {
+                if (m_bSilentExport)
+                    throw;
                 MessageBox.Show(ex.Message);
             }
         }

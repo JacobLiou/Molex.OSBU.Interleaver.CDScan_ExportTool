@@ -38,7 +38,7 @@ namespace InterleaverDateKit
     };
     public class Ini
     {
-        // ????INI?????ß’???????? WritePrivateProfileString()
+        // ????INI?????ùù???????? WritePrivateProfileString()
         [System.Runtime.InteropServices.DllImport("kernel32")]
         private static extern long WritePrivateProfileString(string section, string key, string val, string filePath);
         // ????INI?????????????? GetPrivateProfileString()
@@ -48,14 +48,14 @@ namespace InterleaverDateKit
       
         public void Writue(string section, string key, string value, string path)
         {
-            // section=??????key=??????value=?????path=°§??
+            // section=??????key=??????value=?????path=ùù??
             WritePrivateProfileString(section, key, value, path);
         }
         public string ReadValue(string section, string key, string path)
         {
-            // ??¶ƒ?ini?ßÿ?????????
+            // ??ùù?ini?ùù?????????
             System.Text.StringBuilder temp = new System.Text.StringBuilder(255);
-            // section=??????key=??????temp=???ó®path=°§??
+            // section=??????key=??????temp=???ùùpath=ùù??
             GetPrivateProfileString(section, key, "", temp, 255, path);
             return temp.ToString();
         }
@@ -930,6 +930,11 @@ namespace InterleaverDateKit
         public double m_nChFirst;
         public double m_nChFirstC;
         public bool m_bDualBand;
+        public int m_nCalGhzL;
+        public int m_nCalGhzC;
+        public double m_dblScriptFirstCh;
+        public double m_dblScriptLastCh;
+        public double m_dblScriptLastChC;
 
         public ILChannelType checkChannelType()
         {
@@ -953,15 +958,21 @@ namespace InterleaverDateKit
                 return ILChannelType.ChannelTypeEven;
         }
 
-        private void AppendITUGridSegment(double chFirst, ArrayList alITUGrid, double[] dblFreq)
+        private void AppendITUGridSegmentInRange(int calGhz, double firstCh, double lastCh, ArrayList alITUGrid, double[] dblFreq)
         {
             if (dblFreq.Length == 0)
                 return;
 
-            double dblTempVal = chFirst + m_nChSpace;
-            while (dblTempVal >= dblFreq[dblFreq.Length - 1])
+            double freqMax = Math.Max(dblFreq[0], dblFreq[dblFreq.Length - 1]);
+            double freqMin = Math.Min(dblFreq[0], dblFreq[dblFreq.Length - 1]);
+
+            double dblTempVal = calGhz + lastCh * 100 + m_nChSpace;
+            double dblBottom = calGhz + firstCh * 100;
+
+            while (dblTempVal >= dblBottom)
             {
-                alITUGrid.Add(dblTempVal);
+                if (dblTempVal <= freqMax && dblTempVal >= freqMin)
+                    alITUGrid.Add(dblTempVal);
                 dblTempVal -= m_nChSpace;
             }
         }
@@ -969,8 +980,8 @@ namespace InterleaverDateKit
         private void CreateITUGridDual(ILChannelType type, ArrayList alITUGrid)
         {
             double[] dblFreq = (double[])Data.m_aldblFreq1.ToArray(typeof(double));
-            AppendITUGridSegment(m_nChFirst, alITUGrid, dblFreq);
-            AppendITUGridSegment(m_nChFirstC, alITUGrid, dblFreq);
+            AppendITUGridSegmentInRange(m_nCalGhzL, m_dblScriptFirstCh, m_dblScriptLastCh, alITUGrid, dblFreq);
+            AppendITUGridSegmentInRange(m_nCalGhzC, m_dblScriptFirstCh, m_dblScriptLastChC, alITUGrid, dblFreq);
         }
 
         private void CreateITUGrid(ILChannelType type, ArrayList alITUGrid)
@@ -1022,7 +1033,7 @@ namespace InterleaverDateKit
                     {
                         dblTempVal = dblFreq[0] - dblFreq[0] % (m_nChSpace / 2);
                     }
-                    //????????ß‡????????????????????????????
+                    //????????ùù????????????????????????????
                     dblTempVal = m_nChFirst + m_nChSpace;
                 }
                 else
@@ -1035,7 +1046,7 @@ namespace InterleaverDateKit
                     {
                         dblTempVal = dblFreq[0] - dblFreq[0] % m_nChSpace - (m_nChSpace / 2);
                     }
-                    //????????ß‡????????????????????????????
+                    //????????ùù????????????????????????????
                     dblTempVal = m_nChFirst + m_nChSpace;
                 }
                 while (dblTempVal >= dblFreq[dblFreq.Length - 1])
@@ -1289,7 +1300,7 @@ namespace InterleaverDateKit
                 Data.GetRangeIndexFromArray(dblStartFreq, dblEndFreq, dblFreq2, alIndexArray);
                 if (alIndexArray.Count == 0)
                 {
-                    throw new Exception("?????????ß≥????????????CD?????!");
+                    throw new Exception("?????????ùù????????????CD?????!");
                 }
                 else
                 {
@@ -1444,7 +1455,7 @@ namespace InterleaverDateKit
                     Data.GetRangeIndexFromArray(dblStartFreq, dblEndFreq, dblFreq2, alIndexArray);
                     if (alIndexArray.Count == 0)
                     {
-                        throw new Exception("?????????ß≥????????????CD?????!");
+                        throw new Exception("?????????ùù????????????CD?????!");
                     }
                     else
                     {
@@ -2143,7 +2154,7 @@ namespace InterleaverDateKit
                 Data.GetRangeIndexFromArray(dblStartFreq, dblEndFreq, dblFreq2, alIndexArray);
                 if (alIndexArray.Count == 0)
                 {
-                    //throw new Exception("?????????ß≥????????????CD?????!");
+                    //throw new Exception("?????????ùù????????????CD?????!");
                     dblWstCD[i] = double.NaN;
                 }
                 else

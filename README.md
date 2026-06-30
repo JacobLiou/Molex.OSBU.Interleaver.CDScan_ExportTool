@@ -47,14 +47,53 @@ Interleaver（交织器）终测 CD（色散）工序的数据采集与导表工
 
 ### Temp_config.txt
 
-位于 exe 同目录，GBK 编码，共 4 行逗号分隔：
+位于 exe 同目录，GBK 编码，共 4～5 行逗号分隔：
 
 | 行 | 含义 | 示例字段 |
 |----|------|----------|
 | 第 1 行 | 扫描参数 | `起始波长,终止波长,步进,RF,IF,PDL开关(0/1),通道间隔` |
-| 第 2 行 | 原始文件前缀 | 不含 `-ODD.csv` / `-EVEN.csv` 后缀的完整路径前缀 |
-| 第 3 行 | 脚本与模板路径 | `脚本/产品前缀路径,模板目录（含 CD_templet.csv）` |
+| 第 2 行 | 原始文件前缀 | 不含 `-ODD.csv` / `-EVEN.csv` 后缀的完整路径前缀（路径或文件名中含 10 位产品 PN） |
+| 第 3 行 | 模板目录（MIMS 写入） | 第 1 字段由 MIMS 写入、**程序忽略**；第 2 字段为 ExcelTemplate 备用路径 |
 | 第 4 行 | 产品类型 | `>2` 时启用 Mux/Demux 选项 |
+| 第 5 行（可选） | 产品 PN 备用 | 第 2 行无法解析 PN 时使用 |
+
+#### 内置 PN → C/L band 映射（不依赖第 3 行第 1 字段）
+
+MIMS 可能将第 3 行第 1 字段写死为 `...\1831760177` 等路径，**程序完全忽略**。每次 **扫描** / **导表** 前：
+
+1. 重读第 2 行（及可选第 5 行），解析 10 位 PN
+2. 按内置规则选脚本与 ini：
+
+| PN | Band | 脚本 | ini |
+|----|------|------|-----|
+| **1831532952** | L band | `1831532952_script_*` | `1831532952.ini`（`Vaue=0`） |
+| **其余全部** | C band | `1834650041_script_*` | `1834650041.ini`（`Vaue=190000`） |
+
+3. ExcelTemplate 目录：**优先** `..\config\ExcelTemplate`（相对 exe）；不存在时再用第 3 行第 2 字段
+
+示例（4 行即可，第 3 行第 1 字段内容无关紧要）：
+
+```text
+3.CD导表的模板和脚本,C:\Public-T\...\1831760177,C:\Public-T\...\ExcelTemplate,
+```
+
+或开发环境：
+
+```text
+3.CD导表的模板和脚本,ignored,..\config\ExcelTemplate,
+```
+
+路径相对 `CD_Scan.exe` 所在目录解析，不依赖 MIMS 启动时的当前工作目录。
+
+#### ini 加载（`LoadCalGhz`）
+
+按**脚本前缀**加载，不使用 `{PN}.ini`（避免 NAS 上错误的 `1831760177.ini` 干扰 C band）：
+
+- L band → `1831532952.ini`
+- C band → `1834650041.ini`
+- 文件不存在时使用程序默认（`Vaue=190000`，`BandMode=C`）
+
+**L band 导表行数**：脚本第 2 行信道号为频率×100（如 `1841` = 184.1 THz）；`Vaue=0` 时 `CalcRealLineCount` 使用 `(last-first)/(nchspace/100)+1`（例：`1841–1869`、`nchspace=200` → 15 行）。ITU 网格从 `末信道×100 + nchspace` 起算会比脚本范围多 1 个高端点，导表取网格**末尾** `nRealLine` 行，使最低频对齐 `firstCh`（含 L42 等末信道）。
 
 开发样例见 [`CD_Scan/Temp_config.txt`](CD_Scan/Temp_config.txt)。
 
@@ -67,7 +106,7 @@ Interleaver（交织器）终测 CD（色散）工序的数据采集与导表工
 | `parameter.ini` | 预匹配合格阈值，节名 `8048M_1` / `8048M_2` |
 | `amalgamate.ini` | COER/DCM 文件路径与数量配置 |
 | `NO_pair.ini` | 预匹配失败时记录的 COER 序列号 |
-| `{产品号}.ini` | 频段锚点配置（与 `Temp_config.txt` 第 3 行产品前缀同目录，独立导表时与脚本同目录） |
+| `{产品号}.ini` | 频段锚点（部署在 ExcelTemplate；程序按脚本前缀加载，见上表） |
 
 #### `{产品号}.ini` — `[CalGhz]` 节
 
@@ -151,6 +190,8 @@ Freq,GD,IL/Gain,Phase,PDL,PMD,Freq,CD
 
 - 配置文件与 CSV 多使用 **GBK / gb2312** 编码
 - 导表前须存在与产品对应的 `*_script_*.txt` 脚本
+- 混合工位由内置 PN 规则选脚本，**勿依赖** Temp_config 第 3 行第 1 字段；ExcelTemplate 部署 `1831532952_*` + `1834650041_*` + 对应 ini
+- 导表前若检测到扫描频段与所选脚本前缀不一致（C 脚本 + L 频段数据等），程序会弹出警告
 - 若目标 `*-导表.csv` 已存在，程序会自动备份为 `*-导表.csv_N.csv`，不直接覆盖
 - 仓库根目录大量 `*.csv`、`*_script_*.txt` 为测试样例，非程序配置模板
 - C+L 产品原始 CSV 须覆盖 L band 频率（约 `185xxx–190xxx`）与 C band（约 `191xxx–196xxx`）；仅 C band 扫描波长时 L 段指标会异常

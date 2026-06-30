@@ -87,9 +87,11 @@ button6_Click
    - 原始：`{前缀}-ODD.csv` / `{前缀}-EVEN.csv`
    - 导表：`{前缀}-ODD-导表.csv`
    - 脚本：`{outputfile}_script_{ODD|EVEN}_{PDL|NOPDL}.txt`
-- **频段配置**：`LoadCalGhz()` 从 `{PN}.ini` 读取；`BandMode=CL` 时 `ILCalc.CreateITUGridDual` 合并 L/C 网格；导表行范围由 `BuildExportRowRange()` 统一计算（`outputresult_Click`、`button5_Click`、`anaylsedata`）
-5. **信道行数**：`CalcRealLineCount` / `BuildExportRowRange` 处理 `nchspace` 三分支；CL 模式 `nRealStartIndex=0`，`nRealLine` 为 L+C 行数之和
-6. **备份策略**：目标 CSV 已存在时备份为 `*_N.csv`，不弹窗覆盖（相关 MessageBox 已注释）
+4. **混合工位脚本选择**：`RefreshProductContext()` 每次扫描/导表重读第 2 行 PN；`IsLBandPn()` 仅 `1831532952`→L 脚本，其余→`1834650041`；**忽略** Temp_config 第 3 行第 1 字段
+5. **配置路径**：`ResolveExcelTemplateDir()` 优先 `..\config\ExcelTemplate`，备用第 3 行第 2 字段；路径经 `ResolveConfigPath()` 相对 exe 解析
+6. **频段配置**：`ResolveIniPath()` 按脚本前缀（`1831532952` / `1834650041`）加载 ini，不读 `{PN}.ini`
+7. **信道行数**：`CalcRealLineCount` / `BuildExportRowRange` — L band（`Vaue=0` 且非 CL）：`(last-first)/(nchspace/100)+1`；网格比脚本多 1 个高端点时 `nRealStartIndex=Count-nRealLine` 与 `firstCh..lastCh` 对齐；C band（`Vaue≠0`）：原三分支 + ITU 对齐循环；CL 模式 `nRealStartIndex=0`，`nRealLine` 为 L+C 行数之和
+8. **备份策略**：目标 CSV 已存在时备份为 `*_N.csv`，不弹窗覆盖（相关 MessageBox 已注释）
 
 ### 仪器与外部 DLL
 
@@ -108,8 +110,9 @@ button6_Click
 | 用户意图 | 优先查看 | 注意点 |
 |----------|----------|--------|
 | 新增导表指标 | `Form1.calcResult` 的 `switch` + `ILCalc` 新方法 | 更新 README 脚本格式；样例 CSV 回归 |
-| 调整信道范围/输出行数 | 脚本第 2 行 + `BuildExportRowRange` / `CalcRealLineCount` | CL 模式同步 `{PN}.ini` 的 `LastChC` |
-| C+L / 频段锚点 | `LoadCalGhz`、`ILCalc.m_nChFirst` / `m_nChFirstC` | `Vaue`/`CalGhzC` 与 `ResbyIL.m_nChFirst` 公式一致 |
+| 调整信道范围/输出行数 | 脚本第 2 行 + `BuildExportRowRange` / `CalcRealLineCount` | L band（`Vaue=0`）：`(last-first)/(nchspace/100)+1`；C band 仍用三分支；CL 同步 `{PN}.ini` 的 `LastChC` |
+| 混合工位 C/L 脚本 | `RefreshProductContext`、`IsLBandPn`、`ResolveScriptPrefixPath` | 内置 PN：仅 1831532952=L；其余 C→1834650041；忽略第 3 行第 1 字段 |
+| C+L / 频段锚点 | `LoadCalGhz`、`ResolveIniPath`、`ILCalc.m_nChFirst` | `Vaue`/`CalGhzC` 与 `ResbyIL.m_nChFirst` 公式一致 |
 | 修改合格判定 | `anaylsedata` + `parameter.ini` | `paravalue_{N}` 最后一项为 IL Ripple；`position_*` 对应导表列索引 |
 | 换仪器 / 连接问题 | `pdlaClient`、`initpara`、`getResultValue` | 外部 DLL API，需实机 |
 | 修复导表数值 | `ILCalc.Calc*` + `LineFit` | 用仓库样例 `*.csv` + `*_script_*.txt` 对比 `*-导表.csv` |
@@ -124,7 +127,7 @@ button6_Click
 - `CalGhzC`：C+L 时 C 段锚点，默认 `190000`
 - `LastChC`：C+L 时 C 段末信道，默认 `60.5`
 - `BandMode`：`C` 或 `CL`
-- 样例：`CFOI050100OPL03.ini`（C）、`CFOI050CM0ADV01.ini`（CL）
+- 样例：`CFOI050100OPL03.ini`（C）、`CFOI050CM0ADV01.ini`（CL）、`1831532952.ini`（L band）、`1834650041.ini`（C band 共用）
 
 ### parameter.ini（节 `8048M_1` / `8048M_2`）
 
